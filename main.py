@@ -96,10 +96,30 @@ class ImageApp(TkinterDnD.Tk):
             self.drop_label.config(text=f"Ошибка при загрузке изображения: {str(e)}")
 
     def open_large_image(self, file_path):
-        """Открывает изображение в большем размере."""
+        """Открывает изображение в большем размере с ограничением размера окна."""
         try:
             # Открываем изображение в оригинальном размере
             image = Image.open(file_path)
+
+            # Ограничиваем размер изображения, если оно слишком большое
+            max_width = 800  # Максимальная ширина окна
+            max_height = 600  # Максимальная высота окна
+
+            # Получаем текущие размеры изображения
+            img_width, img_height = image.size  # image.size возвращает (width, height)
+
+            # Вычисляем новый размер изображения с учетом максимальных ограничений
+            aspect_ratio = img_width / img_height
+            if img_width > max_width or img_height > max_height:
+                if aspect_ratio > 1:
+                    new_width = max_width
+                    new_height = int(new_width / aspect_ratio)
+                else:
+                    new_height = max_height
+                    new_width = int(new_height * aspect_ratio)
+
+                # Используем LANCZOS для ресайза
+                image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
 
             # Создаем новое окно для отображения изображения
             top = tk.Toplevel(self)
@@ -112,6 +132,9 @@ class ImageApp(TkinterDnD.Tk):
             image_label = tk.Label(top, image=photo)
             image_label.photo = photo  # Сохраняем ссылку на изображение
             image_label.pack(padx=20, pady=20)
+
+            # Устанавливаем размер окна с учетом изображения
+            top.geometry(f"{image.width + 40}x{image.height + 40}")  # Учитываем отступы
 
             # Добавляем кнопку для закрытия окна
             close_button = tk.Button(top, text="Закрыть", command=top.destroy)
