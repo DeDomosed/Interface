@@ -1,10 +1,10 @@
 import tkinter as tk
-from tkinter import filedialog
+from tkinter import filedialog, ttk
 from tkinterdnd2 import TkinterDnD
 from PIL import Image, ImageTk
 import os
 import re
-from results_page import ResultsPage  # Импорт страницы результатов
+import json
 
 
 class ImageApp(TkinterDnD.Tk):
@@ -13,15 +13,30 @@ class ImageApp(TkinterDnD.Tk):
         self.title("Выбор файлов и Drag-and-Drop")
         self.geometry("800x600")
 
-        self.process_button = tk.Button(self, text="Обработать изображения", command=self.open_results_page)
-        self.process_button.pack(pady=10)
+        # Список для хранения имен игроков
+        self.player_names = []
 
-        self.min_width = min_width
-        self.min_height = min_height
-        self.minsize(self.min_width, self.min_height)
+        # Создаем таблицу для ввода имен игроков
+        self.player_frame = tk.Frame(self)
+        self.player_frame.pack(anchor="nw", padx=10, pady=10)
 
-        self.resizable(True, True)
+        tk.Label(self.player_frame, text="Имена игроков").pack(anchor="w")
 
+        self.player_table = ttk.Treeview(self.player_frame, columns=("name"), show="headings", height=5)
+        self.player_table.heading("name", text="Имя игрока")
+        self.player_table.pack(fill=tk.X, expand=True)
+
+        # Подключение событий для редактирования
+        self.player_table.bind('<Double-1>', self.edit_player_name)
+
+        # Кнопки для управления таблицей игроков
+        self.add_name_button = tk.Button(self.player_frame, text="Добавить игрока", command=self.add_player_row)
+        self.add_name_button.pack(side=tk.LEFT, padx=5, pady=5)
+
+        self.remove_name_button = tk.Button(self.player_frame, text="Удалить выбранного", command=self.remove_player_row)
+        self.remove_name_button.pack(side=tk.LEFT, padx=5, pady=5)
+
+        # Остальной интерфейс
         self.choose_files_button = tk.Button(self, text="Выбрать файлы", command=self.choose_files)
         self.choose_files_button.pack(pady=10)
 
@@ -34,13 +49,68 @@ class ImageApp(TkinterDnD.Tk):
         self.drop_label.drop_target_register('DND_Files')
         self.drop_label.dnd_bind('<<Drop>>', self.on_drop)
 
-        self.results_page = ResultsPage(self)
+        self.process_button = tk.Button(self, text="Обработать изображения", command=self.save_names_and_open_results)
+        self.process_button.pack(pady=10)
 
-        #добавлен список для хранения всех картинок
+        # Хранение изображений
         self.images = []
 
+    def add_player_row(self):
+        """Добавляет пустую строку для имени игрока."""
+        new_index = len(self.player_names) + 1
+        new_name = f"Игрок {new_index}"
+        self.player_table.insert("", "end", values=(new_name,))
+        self.player_names.append(new_name)
+
+    def remove_player_row(self):
+        """Удаляет выбранную строку."""
+        selected_item = self.player_table.selection()
+        if selected_item:
+            for item in selected_item:
+                self.player_table.delete(item)
+                index = int(self.player_table.index(item))
+                self.player_names.pop(index)
+
+    def edit_player_name(self, event):
+        """Позволяет редактировать имя игрока по двойному щелчку."""
+        item_id = self.player_table.identify_row(event.y)
+        column = self.player_table.identify_column(event.x)
+
+        if item_id and column == '#1':
+            bbox = self.player_table.bbox(item_id, column)
+            entry = tk.Entry(self.player_frame)
+            entry.place(x=bbox[0], y=bbox[1], width=bbox[2], height=bbox[3])
+            entry.insert(0, self.player_table.item(item_id, "values")[0])
+            entry.focus()
+
+            def save_edit(event=None):
+                new_value = entry.get()
+                self.player_table.item(item_id, values=(new_value,))
+                entry.destroy()
+
+            entry.bind("<Return>", save_edit)
+            entry.bind("<FocusOut>", save_edit)
+
+    def save_names_to_json(self):
+        """Сохраняет введенные имена игроков в JSON-файл."""
+        try:
+            players_data = [{"player_name": self.player_table.item(row_id, "values")[0]}
+                            for row_id in self.player_table.get_children()]
+
+            with open("players.json", "w", encoding="utf-8") as f:
+                json.dump(players_data, f, ensure_ascii=False, indent=4)
+
+            print("Имена игроков успешно сохранены в 'players.json'.")
+        except Exception as e:
+            print(f"Ошибка при сохранении имен игроков: {e}")
+
+    def save_names_and_open_results(self):
+        """Сохраняет имена игроков и открывает страницу результатов."""
+        self.save_names_to_json()
+        print("Открытие страницы результатов...")
+
     def choose_files(self):
-        file_paths = tk.filedialog.askopenfilenames(
+        file_paths = filedialog.askopenfilenames(
             title="Выберите изображения",
             filetypes=(("Изображения", "*.png *.jpg *.jpeg *.bmp *.gif"), ("Все файлы", "*.*"))
         )
@@ -74,9 +144,7 @@ class ImageApp(TkinterDnD.Tk):
                 return
 
             self.images.append(file_path)
-            print(self.images)
             image = Image.open(file_path)
-            #добавлены ширина и высота картинки
             image_width = 200
             image_height = 150
             image.thumbnail((image_width, image_height))
@@ -84,32 +152,24 @@ class ImageApp(TkinterDnD.Tk):
 
             image_label = tk.Label(self.image_frame, image=photo)
             image_label.photo = photo
-            #image_label.pack(side="left", padx=10, pady=10, fill=tk.Y, expand=True)
+
             i = len(self.images) - 1
             columns_count = self.image_frame.winfo_width() // image_width
-            image_label.grid(row=i//columns_count, column=i%columns_count)
+            image_label.grid(row=i // columns_count, column=i % columns_count)
 
-            # Добавляем обработчик нажатия на миниатюру
             image_label.bind("<Button-1>", lambda event, path=file_path: self.open_large_image(path))
 
         except Exception as e:
             self.drop_label.config(text=f"Ошибка при загрузке изображения: {str(e)}")
 
     def open_large_image(self, file_path):
-        """Открывает изображение в большем размере с ограничением размера окна."""
         try:
-            # Открываем изображение в оригинальном размере
             image = Image.open(file_path)
-
-            # Ограничиваем размер изображения, если оно слишком большое
-            max_width = 800  # Максимальная ширина окна
-            max_height = 600  # Максимальная высота окна
-
-            # Получаем текущие размеры изображения
-            img_width, img_height = image.size  # image.size возвращает (width, height)
-
-            # Вычисляем новый размер изображения с учетом максимальных ограничений
+            max_width = 800
+            max_height = 600
+            img_width, img_height = image.size
             aspect_ratio = img_width / img_height
+
             if img_width > max_width or img_height > max_height:
                 if aspect_ratio > 1:
                     new_width = max_width
@@ -118,42 +178,23 @@ class ImageApp(TkinterDnD.Tk):
                     new_height = max_height
                     new_width = int(new_height * aspect_ratio)
 
-                # Используем LANCZOS для ресайза
                 image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
 
-            # Создаем новое окно для отображения изображения
             top = tk.Toplevel(self)
             top.title("Просмотр изображения")
 
-            # Конвертируем изображение в формат для отображения
             photo = ImageTk.PhotoImage(image)
-
-            # Отображаем изображение в новом окне
             image_label = tk.Label(top, image=photo)
-            image_label.photo = photo  # Сохраняем ссылку на изображение
+            image_label.photo = photo
             image_label.pack(padx=20, pady=20)
 
-            # Устанавливаем размер окна с учетом изображения
-            top.geometry(f"{image.width + 40}x{image.height + 40}")  # Учитываем отступы
+            top.geometry(f"{image.width + 40}x{image.height + 40}")
 
-            # Добавляем кнопку для закрытия окна
             close_button = tk.Button(top, text="Закрыть", command=top.destroy)
             close_button.pack(pady=10)
 
         except Exception as e:
-            messagebox.showerror("Ошибка", f"Не удалось открыть изображение: {e}")
-
-    def open_results_page(self):
-        print("Нажата кнопка 'Обработать изображения'. Открываем страницу результатов...")
-        try:
-            self.results_page.display_results("result.json")  # Путь к JSON-файлу с результатами
-            self.results_page.pack(fill=tk.BOTH, expand=True)
-
-            for widget in self.winfo_children():
-                if widget != self.results_page:
-                    widget.pack_forget()
-        except Exception as e:
-            print(f"Ошибка при открытии страницы результатов: {e}")
+            print(f"Не удалось открыть изображение: {e}")
 
 
 if __name__ == "__main__":
